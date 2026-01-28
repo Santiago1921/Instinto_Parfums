@@ -157,3 +157,17 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+
+# En backend/settings.py
+
+# Permite que el Frontend le hable al Backend
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "https://frontend-instinto.onrender.com",  # <-- TU URL DEL FRONTEND
+]
+
+# Permite enviar formularios (como el Login) desde esa URL
+CSRF_TRUSTED_ORIGINS = [
+    "https://frontend-instinto.onrender.com",  # <-- TU URL DEL FRONTEND
+    "https://backend-instinto.onrender.com",   # <-- TU URL DEL BACKEND
+]
