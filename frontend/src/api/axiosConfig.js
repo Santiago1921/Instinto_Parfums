@@ -1,12 +1,8 @@
-import axios from 'axios';
-
-// Esta línea hace la magia:
-// Busca una variable en la nube llamada VITE_API_URL.
-// Si no la encuentra (porque estás en tu PC), usa localhost.
-const baseURL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+import axios from 'axios'
 
 const api = axios.create({
-    baseURL: baseURL,
-});
+    // Aquí pegamos la URL de tu Backend que ya está vivo en Render
+    baseURL: 'https://backend-instinto.onrender.com'
+})
 
-export default api;
+export default api
