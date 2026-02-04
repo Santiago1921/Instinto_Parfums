@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import api from '../api/axiosConfig' // <--- CAMBIADO
+import api from '../api/axiosConfig'
 import Inventario from './Inventario'
 import Ventas from './Ventas'
 import Historial from './Historial'
-import Gastos from './Gastos' // <--- IMPORTAMOS GASTOS
+import Gastos from './Gastos'
 
 import logo from '../assets/logo.png' 
 
@@ -16,15 +16,14 @@ function Dashboard({ logout }) {
     ventasHoy: 0, 
     perfumesVendidos: 0, 
     stockBajo: 0,
-    gastosHoy: 0,      // Nuevo
-    gananciaNeta: 0    // Nuevo
+    gastosHoy: 0,
+    gananciaNeta: 0
   })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (activeTab === 'inicio') {
       const token = localStorage.getItem('token')
-      // CAMBIADO: Usamos api.get y quitamos el dominio
       api.get('/api/dashboard/', {
         headers: { 'Authorization': `Token ${token}` }
       })
@@ -35,8 +34,8 @@ function Dashboard({ logout }) {
           ventasHoy: res.data.ventas_hoy, 
           perfumesVendidos: res.data.cantidad_perfumes, 
           stockBajo: res.data.stock_bajo,
-          gastosHoy: res.data.gastos_hoy || 0,        // Recibimos dato
-          gananciaNeta: res.data.ganancia_neta || 0   // Recibimos dato
+          gastosHoy: res.data.gastos_hoy || 0,
+          gananciaNeta: res.data.ganancia_neta || 0
         })
         setLoading(false)
       })
@@ -56,15 +55,53 @@ function Dashboard({ logout }) {
     }).join(' ')
   }
 
+  // --- ESTILOS CORREGIDOS PARA EL SCROLL ---
   const styles = {
-    container: { minHeight: '100vh', backgroundColor: '#050505', color: 'white', fontFamily: 'sans-serif', display: 'flex' },
-    sidebar: { width: '250px', background: 'rgba(20, 20, 20, 0.9)', borderRight: '1px solid rgba(255, 255, 255, 0.1)', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' },
+    // 1. Fijamos la altura al tamaño de la ventana y ocultamos el scroll global
+    container: { 
+        height: '100vh', 
+        width: '100vw',
+        backgroundColor: '#050505', 
+        color: 'white', 
+        fontFamily: 'sans-serif', 
+        display: 'flex',
+        overflow: 'hidden' // <--- IMPORTANTE: Evita scroll doble
+    },
+    
+    sidebar: { 
+        width: '250px', 
+        background: 'rgba(20, 20, 20, 0.9)', 
+        borderRight: '1px solid rgba(255, 255, 255, 0.1)', 
+        padding: '20px', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        flexShrink: 0 // <--- IMPORTANTE: Evita que el menú se aplaste
+    },
+    
     logo: { width: '100px', height: 'auto', marginBottom: '15px', borderRadius: '10px', filter: 'invert(1) grayscale(1) brightness(1.5)' },
-    content: { flex: 1, padding: '40px', overflowY: 'auto', backgroundImage: 'radial-gradient(circle at top left, rgba(147,51,234,0.1), transparent 40%)' },
+    
+    // 2. Hacemos que el contenido tenga su propio scroll independiente
+    content: { 
+        flex: 1, 
+        padding: '40px', 
+        overflowY: 'auto', // <--- IMPORTANTE: Habilita el scroll aquí
+        height: '100%',    // <--- IMPORTANTE: Ocupa todo el alto disponible
+        backgroundImage: 'radial-gradient(circle at top left, rgba(147,51,234,0.1), transparent 40%)',
+        boxSizing: 'border-box'
+    },
+    
     menuContainer: { width: '100%' },
     menuItem: (isActive) => ({ padding: '15px 20px', marginBottom: '10px', borderRadius: '12px', cursor: 'pointer', background: isActive ? 'linear-gradient(90deg, rgba(236, 72, 153, 0.2), transparent)' : 'transparent', borderLeft: isActive ? '4px solid #db2777' : '4px solid transparent', color: isActive ? 'white' : '#888', fontWeight: isActive ? 'bold' : 'normal', transition: 'all 0.3s', width: '100%', boxSizing: 'border-box' }),
     card: { background: 'rgba(25, 25, 30, 0.6)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '30px', marginBottom: '30px', backdropFilter: 'blur(10px)' },
-    chartContainer: { height: '300px', width: '100%', position: 'relative', marginTop: '20px' }
+    chartContainer: { height: '300px', width: '100%', position: 'relative', marginTop: '20px' },
+    
+    // 3. Grid Responsivo (para que no se rompa en pantallas chicas)
+    kpiGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', // <--- MEJORA: Se adapta si la pantalla es chica
+        gap: '20px'
+    }
   }
 
   return (
@@ -78,7 +115,6 @@ function Dashboard({ logout }) {
             <div style={styles.menuItem(activeTab === 'ventas')} onClick={() => setActiveTab('ventas')}>🛒 Nueva Venta</div>
             <div style={styles.menuItem(activeTab === 'inventario')} onClick={() => setActiveTab('inventario')}>📦 Control Stock</div>
             <div style={styles.menuItem(activeTab === 'historial')} onClick={() => setActiveTab('historial')}>📜 Historial</div>
-            {/* NUEVO BOTÓN */}
             <div style={styles.menuItem(activeTab === 'gastos')} onClick={() => setActiveTab('gastos')}>💸 Gastos</div>
         </div>
 
@@ -113,8 +149,8 @@ function Dashboard({ logout }) {
               </div>
             </div>
 
-            {/* TARJETAS ACTUALIZADAS CON GASTOS Y GANANCIA */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '20px' }}>
+            {/* USAMOS EL NUEVO GRID RESPONSIVO */}
+            <div style={styles.kpiGrid}>
                 <div style={styles.card}>
                     <div style={{ color: '#888' }}>Ventas Hoy</div>
                     <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#4ade80' }}>
@@ -122,7 +158,6 @@ function Dashboard({ logout }) {
                     </div>
                 </div>
                 
-                {/* TARJETA DE GASTOS */}
                 <div style={styles.card}>
                     <div style={{ color: '#888' }}>Gastos Hoy</div>
                     <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#f43f5e' }}>
@@ -130,7 +165,6 @@ function Dashboard({ logout }) {
                     </div>
                 </div>
 
-                {/* TARJETA DE GANANCIA REAL */}
                 <div style={{...styles.card, border: '1px solid #3b82f6'}}>
                     <div style={{ color: '#60a5fa' }}>Ganancia Neta</div>
                     <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#60a5fa' }}>

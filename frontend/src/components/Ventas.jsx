@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react'
-import api from '../api/axiosConfig' // <--- CAMBIADO
-import Swal from 'sweetalert2' // <--- IMPORTAMOS
+import api from '../api/axiosConfig'
+import Swal from 'sweetalert2'
 
 function Ventas() {
   const [productos, setProductos] = useState([])
   const [carrito, setCarrito] = useState([])
+  
+  // Estados del formulario
   const [productoSeleccionado, setProductoSeleccionado] = useState('')
   const [cantidad, setCantidad] = useState(1)
+  const [precioVenta, setPrecioVenta] = useState('') // <--- NUEVO: Para editar precio
+  
   const [total, setTotal] = useState(0)
 
   const cargarProductos = () => {
     const token = localStorage.getItem('token')
-    // CAMBIADO: api.get y ruta relativa
     api.get('/api/productos/', {
       headers: { 'Authorization': `Token ${token}` }
     })
@@ -21,13 +24,27 @@ function Ventas() {
 
   useEffect(() => { cargarProductos() }, [])
 
+  // --- NUEVA FUNCIÓN: Al elegir producto, ponemos su precio original por defecto ---
+  const handleProductoChange = (e) => {
+    const id = e.target.value
+    setProductoSeleccionado(id)
+
+    // Buscamos el producto para sacar su precio base
+    const prod = productos.find(p => p.id === parseInt(id))
+    if (prod) {
+        setPrecioVenta(prod.precio) // Rellenamos el precio automáticamente
+    } else {
+        setPrecioVenta('')
+    }
+  }
+
   const agregarAlCarrito = (e) => {
     e.preventDefault()
-    if (!productoSeleccionado) return
+    if (!productoSeleccionado || !precioVenta) return // Validamos que haya precio
 
     const producto = productos.find(p => p.id === parseInt(productoSeleccionado))
+    
     if (producto.stock < cantidad) {
-      // Alerta bonita de error
       Swal.fire({
         icon: 'error',
         title: 'Oops...',
@@ -40,29 +57,32 @@ function Ventas() {
     const nuevoItem = {
       id: producto.id,
       nombre: producto.nombre,
-      precio: producto.precio,
+      precio: parseFloat(precioVenta), // <--- USAMOS EL PRECIO EDITADO
       cantidad: parseInt(cantidad),
-      subtotal: producto.precio * parseInt(cantidad)
+      subtotal: parseFloat(precioVenta) * parseInt(cantidad) // <--- CÁLCULO CON PRECIO EDITADO
     }
 
     const nuevoCarrito = [...carrito, nuevoItem]
     setCarrito(nuevoCarrito)
+    
+    // Recalcular total
     const nuevoTotal = nuevoCarrito.reduce((acc, item) => acc + item.subtotal, 0)
     setTotal(nuevoTotal)
+    
+    // Resetear formulario
     setCantidad(1)
     setProductoSeleccionado('')
+    setPrecioVenta('')
   }
 
   const handleConfirmarVenta = () => {
     const token = localStorage.getItem('token')
     
-    // CAMBIADO: api.post y ruta relativa
     api.post('/api/registrar-venta/', 
       { items: carrito }, 
       { headers: { 'Authorization': `Token ${token}` } }
     )
     .then(response => {
-      // --- POP UP DE ÉXITO GIGANTE ---
       Swal.fire({
         icon: 'success',
         title: '¡Venta Registrada!',
@@ -71,7 +91,7 @@ function Ventas() {
         color: '#fff',
         confirmButtonColor: '#4ade80',
         confirmButtonText: '<span style="color:black; font-weight:bold">GENIAL</span>',
-        backdrop: `rgba(0,0,123,0.1)` // Un fondo sutil
+        backdrop: `rgba(0,0,123,0.1)`
       })
       
       setCarrito([])
@@ -79,6 +99,7 @@ function Ventas() {
       cargarProductos()
     })
     .catch(error => {
+      console.error(error)
       Swal.fire({
         icon: 'error',
         title: 'Error',
@@ -111,23 +132,73 @@ function Ventas() {
       <div style={styles.panel}>
         <h2 style={styles.title}>📦 Agregar Producto</h2>
         <form onSubmit={agregarAlCarrito}>
-          <div style={styles.formGroup}><label style={styles.label}>Producto</label>
-            <select style={styles.select} value={productoSeleccionado} onChange={e => setProductoSeleccionado(e.target.value)}>
+          
+          {/* SELECCIÓN DE PRODUCTO */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Producto</label>
+            <select 
+                style={styles.select} 
+                value={productoSeleccionado} 
+                onChange={handleProductoChange} // <--- Usamos la nueva función
+            >
               <option value="">-- Seleccionar --</option>
-              {productos.map(p => <option key={p.id} value={p.id}>{p.nombre} - ${p.precio} (Stock: {p.stock})</option>)}
+              {productos.map(p => (
+                <option key={p.id} value={p.id}>
+                    {p.nombre} (Stock: {p.stock})
+                </option>
+              ))}
             </select>
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Cantidad</label><input type="number" min="1" style={styles.input} value={cantidad} onChange={e => setCantidad(e.target.value)} /></div>
+
+          {/* NUEVO CAMPO: PRECIO EDITABLE */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Precio de Venta ($)</label>
+            <input 
+                type="number" 
+                style={styles.input} 
+                value={precioVenta} 
+                onChange={e => setPrecioVenta(e.target.value)} 
+                placeholder="0.00"
+            />
+          </div>
+
+          {/* CANTIDAD */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Cantidad</label>
+            <input 
+                type="number" 
+                min="1" 
+                style={styles.input} 
+                value={cantidad} 
+                onChange={e => setCantidad(e.target.value)} 
+            />
+          </div>
+
           <button type="submit" style={styles.addButton}>+ AGREGAR AL TICKET</button>
         </form>
       </div>
+
       <div style={styles.panel}>
         <h2 style={{...styles.title, color: '#fff'}}>🧾 Ticket de Venta</h2>
         <table style={styles.table}>
-          <thead><tr><th style={styles.th}>Cant.</th><th style={styles.th}>Producto</th><th style={{...styles.th, textAlign: 'right'}}>Subtotal</th></tr></thead>
+          <thead>
+            <tr>
+                <th style={styles.th}>Cant.</th>
+                <th style={styles.th}>Producto</th>
+                <th style={{...styles.th, textAlign: 'right'}}>Precio Unit.</th> {/* Agregué columna precio unitario */}
+                <th style={{...styles.th, textAlign: 'right'}}>Subtotal</th>
+            </tr>
+          </thead>
           <tbody>
-            {carrito.map((item, index) => (<tr key={index}><td style={styles.td}>{item.cantidad}</td><td style={styles.td}>{item.nombre}</td><td style={{...styles.td, textAlign: 'right'}}>${item.subtotal}</td></tr>))}
-            {carrito.length === 0 && <tr><td colSpan="3" style={{textAlign: 'center', padding: '20px', color: '#555'}}>Carrito vacío</td></tr>}
+            {carrito.map((item, index) => (
+                <tr key={index}>
+                    <td style={styles.td}>{item.cantidad}</td>
+                    <td style={styles.td}>{item.nombre}</td>
+                    <td style={{...styles.td, textAlign: 'right', color:'#aaa'}}>${item.precio}</td>
+                    <td style={{...styles.td, textAlign: 'right'}}>${item.subtotal}</td>
+                </tr>
+            ))}
+            {carrito.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', padding: '20px', color: '#555'}}>Carrito vacío</td></tr>}
           </tbody>
         </table>
         <div style={styles.totalContainer}>

@@ -20,11 +20,11 @@ class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all().order_by('-fecha')
     serializer_class = VentaSerializer
 
-class GastoViewSet(viewsets.ModelViewSet): # <--- NUEVO
+class GastoViewSet(viewsets.ModelViewSet):
     queryset = Gasto.objects.all().order_by('-fecha')
     serializer_class = GastoSerializer
 
-# --- REGISTRAR VENTA ---
+# --- REGISTRAR VENTA (MODIFICADO PARA PRECIO VARIABLE) ---
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def registrar_venta(request):
@@ -40,13 +40,20 @@ def registrar_venta(request):
                 producto = Producto.objects.select_for_update().get(id=item['id'])
                 cantidad = int(item['cantidad'])
                 
+                # --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+                # Intentamos leer el precio que viene del Frontend.
+                # Si por alguna razón no viene, usamos el precio original (producto.precio).
+                precio_venta = float(item.get('precio', producto.precio))
+                # ---------------------------------
+                
                 if producto.stock < cantidad:
                     raise Exception(f"Sin stock: {producto.nombre}")
                 
                 producto.stock -= cantidad
                 producto.save()
                 
-                subtotal = producto.precio * cantidad
+                # Calculamos el subtotal usando el PRECIO EDITADO (precio_venta)
+                subtotal = precio_venta * cantidad
                 total_calculado += subtotal
 
                 DetalleVenta.objects.create(venta=nueva_venta, producto=producto, cantidad=cantidad, subtotal=subtotal)
@@ -59,11 +66,10 @@ def registrar_venta(request):
         return Response({'error': str(e)}, status=400)
 
 
-# --- DASHBOARD (AHORA CON GASTOS) ---
+# --- DASHBOARD ---
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_data(request):
-    # Lógica manual de fechas (La que arreglamos antes)
     ahora_utc = timezone.now()
     ahora_arg = ahora_utc - timedelta(hours=3)
     hoy_texto = ahora_arg.strftime('%Y-%m-%d')
@@ -72,12 +78,11 @@ def dashboard_data(request):
     labels_grafico = []
     ventas_hoy = 0
     cantidad_perfumes_hoy = 0
-    gastos_hoy = 0 # <--- NUEVO
+    gastos_hoy = 0
     
     todas_las_ventas = Venta.objects.all()
-    todos_los_gastos = Gasto.objects.all() # <--- Traemos gastos
+    todos_los_gastos = Gasto.objects.all()
 
-    # Recorremos 7 días
     for i in range(6, -1, -1):
         fecha_bucle = ahora_arg - timedelta(days=i)
         texto_bucle = fecha_bucle.strftime('%Y-%m-%d')
@@ -94,7 +99,7 @@ def dashboard_data(request):
                     detalles = DetalleVenta.objects.filter(venta=venta)
                     for d in detalles: perfumes_dia += d.cantidad
 
-        # 2. Sumar Gastos (Solo nos importa el total de HOY para el KPI)
+        # 2. Sumar Gastos
         if i == 0:
             for gasto in todos_los_gastos:
                 fecha_gasto_arg = gasto.fecha - timedelta(hours=3)
@@ -110,7 +115,6 @@ def dashboard_data(request):
 
     stock_bajo = Producto.objects.filter(stock__lt=5).count()
     
-    # Calculamos Ganancia Neta
     ganancia_neta = ventas_hoy - gastos_hoy
 
     return Response({
@@ -119,6 +123,6 @@ def dashboard_data(request):
         'ventas_hoy': ventas_hoy,
         'cantidad_perfumes': cantidad_perfumes_hoy,
         'stock_bajo': stock_bajo,
-        'gastos_hoy': gastos_hoy,      # <--- Enviamos al front
-        'ganancia_neta': ganancia_neta # <--- Enviamos al front
+        'gastos_hoy': gastos_hoy,
+        'ganancia_neta': ganancia_neta
     })
