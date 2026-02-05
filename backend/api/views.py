@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
+from django.utils.dateparse import parse_date # <--- IMPORTANTE: Nuevo import
 from datetime import timedelta
 
 # Modelos
@@ -24,7 +25,7 @@ class GastoViewSet(viewsets.ModelViewSet):
     queryset = Gasto.objects.all().order_by('-fecha')
     serializer_class = GastoSerializer
 
-# --- REGISTRAR VENTA (MODIFICADO PARA PRECIO VARIABLE) ---
+# --- REGISTRAR VENTA ---
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def registrar_venta(request):
@@ -40,11 +41,8 @@ def registrar_venta(request):
                 producto = Producto.objects.select_for_update().get(id=item['id'])
                 cantidad = int(item['cantidad'])
                 
-                # --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
-                # Intentamos leer el precio que viene del Frontend.
-                # Si por alguna razón no viene, usamos el precio original (producto.precio).
+                # Precio variable o precio original
                 precio_venta = float(item.get('precio', producto.precio))
-                # ---------------------------------
                 
                 if producto.stock < cantidad:
                     raise Exception(f"Sin stock: {producto.nombre}")
@@ -52,7 +50,6 @@ def registrar_venta(request):
                 producto.stock -= cantidad
                 producto.save()
                 
-                # Calculamos el subtotal usando el PRECIO EDITADO (precio_venta)
                 subtotal = precio_venta * cantidad
                 total_calculado += subtotal
 
@@ -66,63 +63,79 @@ def registrar_venta(request):
         return Response({'error': str(e)}, status=400)
 
 
-# --- DASHBOARD ---
+# --- DASHBOARD CON FILTROS DE FECHA ---
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_data(request):
+    # 1. Obtener fechas del Frontend (o usar valores por defecto: últimos 7 días)
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+    
     ahora_utc = timezone.now()
-    ahora_arg = ahora_utc - timedelta(hours=3)
-    hoy_texto = ahora_arg.strftime('%Y-%m-%d')
+    ahora_arg = ahora_utc - timedelta(hours=3) # Tu ajuste horario
+
+    # Si no envían fechas, usamos los últimos 7 días por defecto
+    if start_date_str:
+        fecha_inicio = parse_date(start_date_str)
+    else:
+        fecha_inicio = (ahora_arg - timedelta(days=6)).date()
+
+    if end_date_str:
+        fecha_fin = parse_date(end_date_str)
+    else:
+        fecha_fin = ahora_arg.date()
+
+    # 2. Filtrar Ventas y Gastos en ese rango estricto
+    # Usamos __date__gte (mayor o igual) y __date__lte (menor o igual)
+    ventas_rango = Venta.objects.filter(
+        fecha__date__gte=fecha_inicio, 
+        fecha__date__lte=fecha_fin
+    )
+    gastos_rango = Gasto.objects.filter(
+        fecha__date__gte=fecha_inicio, 
+        fecha__date__lte=fecha_fin
+    )
+
+    # 3. Calcular KPIs Totales del Periodo Seleccionado
+    total_ventas = sum(v.total for v in ventas_rango)
+    total_gastos = sum(g.monto for g in gastos_rango)
     
-    datos_grafico = []
-    labels_grafico = []
-    ventas_hoy = 0
-    cantidad_perfumes_hoy = 0
-    gastos_hoy = 0
-    
-    todas_las_ventas = Venta.objects.all()
-    todos_los_gastos = Gasto.objects.all()
-
-    for i in range(6, -1, -1):
-        fecha_bucle = ahora_arg - timedelta(days=i)
-        texto_bucle = fecha_bucle.strftime('%Y-%m-%d')
-        
-        suma_dia = 0
-        perfumes_dia = 0
-        
-        # 1. Sumar Ventas
-        for venta in todas_las_ventas:
-            fecha_venta_arg = venta.fecha - timedelta(hours=3)
-            if fecha_venta_arg.strftime('%Y-%m-%d') == texto_bucle:
-                suma_dia += float(venta.total)
-                if i == 0:
-                    detalles = DetalleVenta.objects.filter(venta=venta)
-                    for d in detalles: perfumes_dia += d.cantidad
-
-        # 2. Sumar Gastos
-        if i == 0:
-            for gasto in todos_los_gastos:
-                fecha_gasto_arg = gasto.fecha - timedelta(hours=3)
-                if fecha_gasto_arg.strftime('%Y-%m-%d') == hoy_texto:
-                    gastos_hoy += float(gasto.monto)
-
-        datos_grafico.append(suma_dia)
-        labels_grafico.append(fecha_bucle.strftime("%d/%m"))
-        
-        if i == 0:
-            ventas_hoy = suma_dia
-            cantidad_perfumes_hoy = perfumes_dia
+    cantidad_perfumes = 0
+    for v in ventas_rango:
+        detalles = DetalleVenta.objects.filter(venta=v)
+        for d in detalles:
+            cantidad_perfumes += d.cantidad
 
     stock_bajo = Producto.objects.filter(stock__lt=5).count()
+    ganancia_neta = total_ventas - total_gastos
+
+    # 4. Generar Datos para el Gráfico (Día a día dentro del rango)
+    datos_grafico = []
+    labels_grafico = []
     
-    ganancia_neta = ventas_hoy - gastos_hoy
+    # Calculamos cuántos días hay en el rango seleccionado
+    delta_dias = (fecha_fin - fecha_inicio).days
+    
+    # Bucle día por día para llenar el gráfico
+    for i in range(delta_dias + 1):
+        dia_actual = fecha_inicio + timedelta(days=i)
+        
+        suma_dia = 0
+        # Filtramos en memoria las ventas de ese día específico para el gráfico
+        for venta in ventas_rango:
+            fecha_venta_local = (venta.fecha - timedelta(hours=3)).date()
+            if fecha_venta_local == dia_actual:
+                suma_dia += float(venta.total)
+        
+        datos_grafico.append(suma_dia)
+        labels_grafico.append(dia_actual.strftime("%d/%m"))
 
     return Response({
         'grafico': datos_grafico,
         'labels': labels_grafico,
-        'ventas_hoy': ventas_hoy,
-        'cantidad_perfumes': cantidad_perfumes_hoy,
+        'ventas_hoy': total_ventas,      # AHORA ESTO ES "VENTAS DEL PERIODO"
+        'cantidad_perfumes': cantidad_perfumes,
         'stock_bajo': stock_bajo,
-        'gastos_hoy': gastos_hoy,
+        'gastos_hoy': total_gastos,      # AHORA ESTO ES "GASTOS DEL PERIODO"
         'ganancia_neta': ganancia_neta
     })

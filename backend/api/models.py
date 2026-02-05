@@ -5,10 +5,14 @@ from django.contrib.auth.models import User
 class Producto(models.Model):
     nombre = models.CharField(max_length=100)
     marca = models.CharField(max_length=100, blank=True)
+    
+    # --- NUEVO CAMPO AGREGADO ---
+    precio_costo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # ----------------------------
+
     precio = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.IntegerField(default=0)
     
-    # CORRECCIÓN AQUÍ:
     # Usamos uuid.uuid4 como 'default' para que genere un código único automáticamente.
     # 'editable=False' hace que no aparezca en el admin para que nadie lo rompa.
     codigo = models.CharField(
